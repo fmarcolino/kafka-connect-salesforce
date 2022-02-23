@@ -21,7 +21,6 @@ import com.google.common.collect.ImmutableMap;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectDescriptor;
 import io.confluent.kafka.connect.utils.data.Parser;
 import io.confluent.kafka.connect.utils.data.type.DateTypeParser;
-import org.apache.kafka.connect.data.Date;
 import org.apache.kafka.connect.data.Decimal;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
@@ -67,7 +66,7 @@ class SObjectHelper {
         builder = SchemaBuilder.bool();
         break;
       case "date":
-        builder = Date.builder();
+        builder = Timestamp.builder();
         break;
       case "address":
         builder = SchemaBuilder.string();
@@ -109,9 +108,7 @@ class SObjectHelper {
         builder = Decimal.builder(field.scale());
         break;
       default:
-        throw new UnsupportedOperationException(
-            String.format("Field type '%s' for field '%s' is not supported", field.type(), field.name())
-        );
+        builder = SchemaBuilder.string();
     }
 
     if (optional) {
