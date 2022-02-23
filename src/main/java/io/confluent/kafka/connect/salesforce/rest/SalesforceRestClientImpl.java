@@ -62,6 +62,7 @@ class SalesforceRestClientImpl implements SalesforceRestClient {
   AuthenticationResponse authentication;
   GenericUrl baseUrl;
   GenericUrl versionBaseUrl;
+  GenericUrl authUrl;
 
   public SalesforceRestClientImpl(SalesforceSourceConfig config) {
     this(config, new NetHttpTransport());
@@ -159,13 +160,16 @@ class SalesforceRestClientImpl implements SalesforceRestClient {
   @Override
   public AuthenticationResponse authenticate() {
     HttpContent formContent = buildAuthContent();
-    this.authentication = postAndParse(this.authenticateUrl, formContent, AuthenticationResponse.class);
 
     if (null == this.config.instance() || this.config.instance().isEmpty()) {
-      this.baseUrl = new GenericUrl(this.authentication.instance_url());
+      this.authentication = postAndParse(this.authenticateUrl, formContent, AuthenticationResponse.class);
     } else {
-      this.baseUrl = new GenericUrl(this.config.instance());
+      GenericUrl authUrl = new GenericUrl(this.config.instance());
+      authUrl.setRawPath("/services/oauth2/token");
+      this.authentication = postAndParse(authUrl, formContent, AuthenticationResponse.class);
     }
+
+    this.baseUrl = new GenericUrl(this.authentication.instance_url());
 
     return this.authentication;
   }
