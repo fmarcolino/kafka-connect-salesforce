@@ -93,11 +93,17 @@ public class SalesforceSourceConnector extends SourceConnector {
       pushTopic.name(this.config.salesForcePushTopicName());
 
       Set<String> fields = new LinkedHashSet<>();
-      for (SObjectDescriptor.Field f : sObjectDescriptor.fields()) {
-        if (SObjectHelper.isTextArea(f)) {
-          continue;
+      if (null == this.config.salesForcePushTopicFields() || this.config.salesForcePushTopicFields().isEmpty()) {
+        for (SObjectDescriptor.Field f : sObjectDescriptor.fields()) {
+          if (SObjectHelper.isTextArea(f)) {
+            continue;
+          }
+          fields.add(f.name());
         }
-        fields.add(f.name());
+      } else {
+        for (String f : this.config.salesForcePushTopicFields().split(",")) {
+          fields.add(f);
+        }
       }
 
       String query = String.format(
