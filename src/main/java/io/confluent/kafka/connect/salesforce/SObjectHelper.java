@@ -66,7 +66,7 @@ class SObjectHelper {
         builder = SchemaBuilder.bool();
         break;
       case "date":
-        builder = Timestamp.builder();
+        builder = SchemaBuilder.string();
         break;
       case "address":
         builder = SchemaBuilder.string();
@@ -93,13 +93,13 @@ class SObjectHelper {
         builder = SchemaBuilder.string();
         break;
       case "datetime":
-        builder = Timestamp.builder();
+        builder = SchemaBuilder.string();
         break;
       case "phone":
         builder = SchemaBuilder.string();
         break;
       case "currency":
-        builder = SchemaBuilder.string();
+        builder = SchemaBuilder.float64();
         break;
       case "email":
         builder = SchemaBuilder.string();
@@ -124,6 +124,25 @@ class SObjectHelper {
     builder.name(name);
 
     for (SObjectDescriptor.Field field : descriptor.fields()) {
+      if (isTextArea(field)) {
+        continue;
+      }
+      Schema schema = schema(field);
+      builder.field(field.name(), schema);
+    }
+
+    return builder.build();
+  }
+
+  public static Schema valueSchema(SObjectDescriptor descriptor, String customFields) {
+    String name = String.format("%s.%s", SObjectHelper.class.getPackage().getName(), descriptor.name());
+    SchemaBuilder builder = SchemaBuilder.struct();
+    builder.name(name);
+
+    for (SObjectDescriptor.Field field : descriptor.fields()) {
+      if (!(customFields == null || customFields.isEmpty()) && !customFields.contains(field.name())) {
+        continue;
+      }
       if (isTextArea(field)) {
         continue;
       }
