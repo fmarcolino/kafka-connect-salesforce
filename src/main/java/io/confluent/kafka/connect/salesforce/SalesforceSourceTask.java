@@ -129,7 +129,7 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
     Preconditions.checkNotNull(this.descriptor, "Could not find descriptor for '%s'", this.config.salesForceObject());
 
     this.keySchema = SObjectHelper.keySchema(this.descriptor);
-    this.valueSchema = SObjectHelper.valueSchema(this.descriptor);
+    this.valueSchema = SObjectHelper.valueSchema(this.descriptor, this.config.salesForcePushTopicFields());
 
     this.streamingUrl = new GenericUrl(this.authenticationResponse.instance_url());
     this.streamingUrl.setRawPath(
