@@ -66,7 +66,7 @@ class SObjectHelper {
         builder = SchemaBuilder.bool();
         break;
       case "date":
-        builder = Timestamp.builder();
+        builder = SchemaBuilder.string();
         break;
       case "address":
         builder = SchemaBuilder.string();
@@ -93,13 +93,13 @@ class SObjectHelper {
         builder = SchemaBuilder.string();
         break;
       case "datetime":
-        builder = Timestamp.builder();
+        builder = SchemaBuilder.string();
         break;
       case "phone":
         builder = SchemaBuilder.string();
         break;
       case "currency":
-        builder = SchemaBuilder.string();
+        builder = SchemaBuilder.float64();
         break;
       case "email":
         builder = SchemaBuilder.string();
