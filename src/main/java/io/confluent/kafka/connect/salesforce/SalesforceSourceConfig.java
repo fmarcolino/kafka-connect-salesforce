@@ -15,14 +15,12 @@
  */
 package io.confluent.kafka.connect.salesforce;
 
-import io.confluent.kafka.connect.utils.config.ValidPattern;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigDef.Importance;
 import org.apache.kafka.common.config.ConfigDef.Type;
 
 import java.util.Map;
-
 
 public class SalesforceSourceConfig extends AbstractConfig {
 
@@ -57,7 +55,8 @@ public class SalesforceSourceConfig extends AbstractConfig {
   static final String CURL_LOGGING_DOC = "If enabled the logs will output the equivalent curl commands. This is a security risk because your authorization header will end up in the log file. Use at your own risk.";
   static final String CONNECTION_TIMEOUT_DOC = "The amount of time to wait while connecting to the Salesforce streaming endpoint.";
   static final String SALESFORCE_PUSH_TOPIC_FIELDS_DOC = "List of the fields to create a query to a new PushTopic.";
-  static final String SALESFORCE_PUSH_TOPIC_NAME_DOC = "The Salesforce topic to subscribe to. If " + SALESFORCE_PUSH_TOPIC_CREATE_CONF +
+  static final String SALESFORCE_PUSH_TOPIC_NAME_DOC = "The Salesforce topic to subscribe to. If "
+      + SALESFORCE_PUSH_TOPIC_CREATE_CONF +
       " is set to true, a PushTopic with this name will be created.";
   static final String SALESFORCE_PUSH_TOPIC_CREATE_DOC = "Flag to determine if the PushTopic should be created if it does not exist.";
   static final String SALESFORCE_PUSH_TOPIC_NOTIFY_CREATE_DOC = "Flag to determine if the PushTopic should respond to creates.";
@@ -87,14 +86,18 @@ public class SalesforceSourceConfig extends AbstractConfig {
         .define(SALESFORCE_OBJECT_CONF, Type.STRING, Importance.HIGH, SALESFORCE_OBJECT_DOC)
         .define(KAFKA_TOPIC_CONF, Type.STRING, Importance.HIGH, KAFKA_TOPIC_DOC)
         .define(CONNECTION_TIMEOUT_CONF, Type.LONG, 30000L, Importance.LOW, CONNECTION_TIMEOUT_DOC)
-        .define(VERSION_CONF, Type.STRING, "latest", ValidPattern.of("^(latest|[\\d\\.]+)$"), Importance.LOW, VERSION_DOC)
+        .define(VERSION_CONF, Type.STRING, "latest", Importance.LOW, VERSION_DOC)
         .define(SALESFORCE_PUSH_TOPIC_FIELDS_CONF, Type.STRING, "", Importance.LOW, SALESFORCE_PUSH_TOPIC_FIELDS_DOC)
         .define(SALESFORCE_PUSH_TOPIC_NAME_CONF, Type.STRING, Importance.HIGH, SALESFORCE_PUSH_TOPIC_NAME_DOC)
         .define(SALESFORCE_PUSH_TOPIC_CREATE_CONF, Type.BOOLEAN, true, Importance.LOW, SALESFORCE_PUSH_TOPIC_CREATE_DOC)
-        .define(SALESFORCE_PUSH_TOPIC_NOTIFY_CREATE_CONF, Type.BOOLEAN, true, Importance.LOW, SALESFORCE_PUSH_TOPIC_NOTIFY_CREATE_DOC)
-        .define(SALESFORCE_PUSH_TOPIC_NOTIFY_UPDATE_CONF, Type.BOOLEAN, true, Importance.LOW, SALESFORCE_PUSH_TOPIC_NOTIFY_UPDATE_DOC)
-        .define(SALESFORCE_PUSH_TOPIC_NOTIFY_DELETE_CONF, Type.BOOLEAN, true, Importance.LOW, SALESFORCE_PUSH_TOPIC_NOTIFY_DELETE_DOC)
-        .define(SALESFORCE_PUSH_TOPIC_NOTIFY_UNDELETE_CONF, Type.BOOLEAN, true, Importance.LOW, SALESFORCE_PUSH_TOPIC_NOTIFY_UNDELETE_DOC);
+        .define(SALESFORCE_PUSH_TOPIC_NOTIFY_CREATE_CONF, Type.BOOLEAN, true, Importance.LOW,
+            SALESFORCE_PUSH_TOPIC_NOTIFY_CREATE_DOC)
+        .define(SALESFORCE_PUSH_TOPIC_NOTIFY_UPDATE_CONF, Type.BOOLEAN, true, Importance.LOW,
+            SALESFORCE_PUSH_TOPIC_NOTIFY_UPDATE_DOC)
+        .define(SALESFORCE_PUSH_TOPIC_NOTIFY_DELETE_CONF, Type.BOOLEAN, true, Importance.LOW,
+            SALESFORCE_PUSH_TOPIC_NOTIFY_DELETE_DOC)
+        .define(SALESFORCE_PUSH_TOPIC_NOTIFY_UNDELETE_CONF, Type.BOOLEAN, true, Importance.LOW,
+            SALESFORCE_PUSH_TOPIC_NOTIFY_UNDELETE_DOC);
   }
 
   public String username() {
@@ -140,7 +143,6 @@ public class SalesforceSourceConfig extends AbstractConfig {
   public boolean salesForcePushTopicCreate() {
     return this.getBoolean(SALESFORCE_PUSH_TOPIC_CREATE_CONF);
   }
-
 
   public String salesForceObject() {
     return this.getString(SALESFORCE_OBJECT_CONF);
