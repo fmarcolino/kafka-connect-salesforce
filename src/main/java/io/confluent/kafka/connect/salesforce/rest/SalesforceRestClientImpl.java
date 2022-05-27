@@ -96,6 +96,7 @@ class SalesforceRestClientImpl implements SalesforceRestClient {
 
       }
     });
+    
     this.requestFactory = httpTransport.createRequestFactory(new HttpRequestInitializer() {
       @Override
       public void initialize(HttpRequest request) throws IOException {

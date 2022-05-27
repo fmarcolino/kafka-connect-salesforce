@@ -43,7 +43,6 @@ class SObjectHelper {
 
   static {
     Parser p = new Parser();
-//    "2016-08-15T22:07:59.000Z"
     p.registerTypeParser(Timestamp.SCHEMA, new DateTypeParser(TimeZone.getTimeZone("UTC"), new SimpleDateFormat("YYYY-MM-dd'T'HH:mm:ss.SSS'Z'")));
     PARSER = p;
   }

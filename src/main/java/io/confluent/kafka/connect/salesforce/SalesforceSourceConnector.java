@@ -111,10 +111,13 @@ public class SalesforceSourceConnector extends SourceConnector {
           Joiner.on(',').join(fields),
           sObjectDescriptor.name()
       );
+      
       pushTopic.query(query);
+
       if (log.isInfoEnabled()) {
         log.info("Setting query for {} to \n{}", pushTopic.name(), pushTopic.query());
       }
+
       pushTopic.notifyForOperationCreate(this.config.salesForcePushTopicNotifyCreate());
       pushTopic.notifyForOperationUpdate(this.config.salesForcePushTopicNotifyUpdate());
       pushTopic.notifyForOperationDelete(this.config.salesForcePushTopicNotifyDelete());

@@ -47,7 +47,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedDeque;
 
-
 public class SalesforceSourceTask extends SourceTask implements ClientSessionChannel.MessageListener {
   static final Logger log = LoggerFactory.getLogger(SalesforceSourceTask.class);
   final ConcurrentLinkedDeque<SourceRecord> messageQueue = new ConcurrentLinkedDeque<>();
@@ -72,6 +71,7 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
     SslContextFactory sslContextFactory = new SslContextFactory();
     HttpClient httpClient = new HttpClient(sslContextFactory);
     httpClient.setConnectTimeout(this.config.connectTimeout());
+
     try {
       httpClient.start();
     } catch (Exception e) {
@@ -85,7 +85,8 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
       @Override
       protected void customize(Request request) {
         super.customize(request);
-        String headerValue = String.format("Authorization: %s %s", authenticationResponse.tokenType(), authenticationResponse.accessToken());
+        String headerValue = String.format("Authorization: %s %s", authenticationResponse.tokenType(),
+            authenticationResponse.accessToken());
         request.header("Authorization", headerValue);
       }
     };
@@ -125,7 +126,6 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
       }
     }
 
-    //2013-05-06T00:00:00+00:00
     Preconditions.checkNotNull(this.descriptor, "Could not find descriptor for '%s'", this.config.salesForceObject());
 
     this.keySchema = SObjectHelper.keySchema(this.descriptor);
@@ -133,39 +133,60 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
 
     this.streamingUrl = new GenericUrl(this.authenticationResponse.instance_url());
     this.streamingUrl.setRawPath(
-        String.format("/cometd/%s", this.apiVersion.version())
-    );
+        String.format("/cometd/%s", this.apiVersion.version()));
 
     if (log.isInfoEnabled()) {
       log.info("Configuring streaming url to {}", this.streamingUrl);
     }
+
     this.streamingClient = createClient();
-    this.streamingClient.getChannel(Channel.META_HANDSHAKE).addListener(new ClientSessionChannel.MessageListener() {
-      @Override
-      public void onMessage(ClientSessionChannel clientSessionChannel, Message message) {
-        if (log.isInfoEnabled()) {
-          log.info("onMessage - {}", message);
-        }
-        if (!message.isSuccessful()) {
-          if (log.isErrorEnabled()) {
-            log.error("Error during handshake: {} {}", message.get("error"), message.get("exception"));
+    this.streamingClient.getChannel(Channel.META_HANDSHAKE)
+        .addListener(new ClientSessionChannel.MessageListener() {
+          @Override
+          public void onMessage(ClientSessionChannel clientSessionChannel, Message message) {
+            if (log.isInfoEnabled()) {
+              log.info("onMessage - {}", message);
+            }
+            if (!message.isSuccessful()) {
+              if (log.isErrorEnabled()) {
+                log.error("Error during handshake: {} {}", message.get("error"), message.get("exception"));
+              }
+            }
           }
-        }
-      }
-    });
+        });
+
+    this.streamingClient.getChannel(Channel.META_CONNECT)
+        .addListener(new ClientSessionChannel.MessageListener() {
+          @Override
+          public void onMessage(ClientSessionChannel clientSessionChannel, Message message) {
+            log.info("Connect message {}", message);
+          }
+        });
+
+    this.streamingClient.getChannel(Channel.META_DISCONNECT)
+        .addListener(new ClientSessionChannel.MessageListener() {
+          @Override
+          public void onMessage(ClientSessionChannel clientSessionChannel, Message message) {
+            log.info("Disconnect message {}", message);
+          }
+        });
 
     if (log.isInfoEnabled()) {
       log.info("Starting handshake");
     }
+
     this.streamingClient.handshake();
+
     if (!this.streamingClient.waitFor(30000, BayeuxClient.State.CONNECTED)) {
       throw new ConnectException("Not connected after 30,000 ms.");
     }
 
     String channel = String.format("/topic/%s", this.config.salesForcePushTopicName());
+    
     if (log.isInfoEnabled()) {
       log.info("Subscribing to {}", channel);
     }
+
     this.streamingClient.getChannel(channel).subscribe(this);
   }
 
@@ -203,11 +224,14 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
   public void onMessage(ClientSessionChannel clientSessionChannel, Message message) {
     try {
       String jsonMessage = message.getJSON();
+      
       if (log.isDebugEnabled()) {
         log.debug("message={}", jsonMessage);
       }
+      
       JsonNode jsonNode = objectMapper.readTree(jsonMessage);
-      SourceRecord record = SObjectHelper.convert(jsonNode, this.config.salesForcePushTopicName(), this.config.kafkaTopic(), keySchema, valueSchema);
+      SourceRecord record = SObjectHelper.convert(jsonNode, this.config.salesForcePushTopicName(),
+          this.config.kafkaTopic(), keySchema, valueSchema);
       this.messageQueue.add(record);
     } catch (Exception ex) {
       if (log.isErrorEnabled()) {
