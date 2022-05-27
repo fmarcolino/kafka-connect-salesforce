@@ -173,20 +173,24 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
     if (log.isInfoEnabled()) {
       log.info("Starting handshake");
     }
-
-    this.streamingClient.handshake();
-
-    if (!this.streamingClient.waitFor(30000, BayeuxClient.State.CONNECTED)) {
-      throw new ConnectException("Not connected after 30,000 ms.");
-    }
-
     String channel = String.format("/topic/%s", this.config.salesForcePushTopicName());
 
-    if (log.isInfoEnabled()) {
-      log.info("Subscribing to {}", channel);
-    }
+    this.streamingClient.handshake(handshakeReply -> {
+      // You can only subscribe after a successful handshake.
+      if (handshakeReply.isSuccessful()) {
+        if (log.isInfoEnabled()) {
+          log.info("Successfull handshake");
+        }
 
-    this.streamingClient.getChannel(channel).subscribe(this);
+        this.streamingClient.getChannel(channel).subscribe(this, subscribeReply -> {
+          if (subscribeReply.isSuccessful()) {
+            if (log.isInfoEnabled()) {
+              log.info("Subscribe successful to {}", channel);
+            }
+          }
+        });
+      }
+    });
   }
 
   @Override

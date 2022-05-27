@@ -187,9 +187,8 @@ class SObjectHelper {
   public static SourceRecord convert(JsonNode jsonNode, String pushTopicName, String topic, Schema keySchema, Schema valueSchema) {
     Preconditions.checkNotNull(jsonNode);
     Preconditions.checkState(jsonNode.isObject());
-    JsonNode dataNode = jsonNode.get("data");
-    JsonNode eventNode = dataNode.get("event");
-    JsonNode sobjectNode = dataNode.get("sobject");
+    JsonNode eventNode = jsonNode.get("event");
+    JsonNode sobjectNode = jsonNode.get("sobject");
     long replayId = eventNode.get("replayId").asLong();
     Struct keyStruct = new Struct(keySchema);
     Struct valueStruct = new Struct(valueSchema);
