@@ -34,10 +34,10 @@ import org.cometd.bayeux.Channel;
 import org.cometd.bayeux.Message;
 import org.cometd.bayeux.client.ClientSessionChannel;
 import org.cometd.client.BayeuxClient;
-import org.cometd.client.transport.LongPollingTransport;
+import org.cometd.client.http.jetty.JettyHttpClientTransport;
+import org.cometd.client.transport.ClientTransport;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.api.Request;
-import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -68,8 +68,7 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
   }
 
   BayeuxClient createClient() {
-    SslContextFactory sslContextFactory = new SslContextFactory();
-    HttpClient httpClient = new HttpClient(sslContextFactory);
+    HttpClient httpClient = new HttpClient();
     httpClient.setConnectTimeout(this.config.connectTimeout());
 
     try {
@@ -80,7 +79,7 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
 
     Map<String, Object> options = new HashMap<>();
 
-    LongPollingTransport transport = new LongPollingTransport(options, httpClient) {
+    ClientTransport transport = new JettyHttpClientTransport(options, httpClient) {
 
       @Override
       protected void customize(Request request) {
@@ -182,7 +181,7 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
     }
 
     String channel = String.format("/topic/%s", this.config.salesForcePushTopicName());
-    
+
     if (log.isInfoEnabled()) {
       log.info("Subscribing to {}", channel);
     }
@@ -223,20 +222,16 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
   @Override
   public void onMessage(ClientSessionChannel clientSessionChannel, Message message) {
     try {
-      String jsonMessage = message.getJSON();
-      
-      if (log.isDebugEnabled()) {
-        log.debug("message={}", jsonMessage);
-      }
-      
-      JsonNode jsonNode = objectMapper.readTree(jsonMessage);
+      Object messageObject = message.getData();
+
+      log.info("message={}", messageObject);
+
+      JsonNode jsonNode = objectMapper.valueToTree(messageObject);
       SourceRecord record = SObjectHelper.convert(jsonNode, this.config.salesForcePushTopicName(),
           this.config.kafkaTopic(), keySchema, valueSchema);
       this.messageQueue.add(record);
     } catch (Exception ex) {
-      if (log.isErrorEnabled()) {
-        log.error("Exception thrown while processing message.", ex);
-      }
+      log.error("Exception thrown while processing message.", ex);
     }
   }
 }
