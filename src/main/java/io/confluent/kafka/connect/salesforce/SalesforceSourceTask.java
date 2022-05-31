@@ -26,6 +26,13 @@ import io.confluent.kafka.connect.salesforce.rest.model.AuthenticationResponse;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectDescriptor;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectMetadata;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectsResponse;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.ConcurrentMap;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.source.SourceRecord;
@@ -33,6 +40,7 @@ import org.apache.kafka.connect.source.SourceTask;
 import org.cometd.bayeux.Channel;
 import org.cometd.bayeux.Message;
 import org.cometd.bayeux.client.ClientSessionChannel;
+import org.cometd.bayeux.client.ClientSessionChannel.MessageListener;
 import org.cometd.client.BayeuxClient;
 import org.cometd.client.http.jetty.JettyHttpClientTransport;
 import org.cometd.client.transport.ClientTransport;
@@ -41,14 +49,13 @@ import org.eclipse.jetty.client.api.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentLinkedDeque;
+public class SalesforceSourceTask
+  extends SourceTask
+  implements ClientSessionChannel.MessageListener {
 
-public class SalesforceSourceTask extends SourceTask implements ClientSessionChannel.MessageListener {
-  static final Logger log = LoggerFactory.getLogger(SalesforceSourceTask.class);
+  private static final Long REPLAY_FROM_EARLY = -2L;
+  private static final Logger log = LoggerFactory.getLogger(SalesforceSourceTask.class);
+  private final ConcurrentMap<String, Long> replay = new ConcurrentHashMap<>();
   final ConcurrentLinkedDeque<SourceRecord> messageQueue = new ConcurrentLinkedDeque<>();
   SalesforceSourceConfig config;
   SalesforceRestClient salesforceRestClient;
@@ -80,12 +87,14 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
     Map<String, Object> options = new HashMap<>();
 
     ClientTransport transport = new JettyHttpClientTransport(options, httpClient) {
-
       @Override
       protected void customize(Request request) {
         super.customize(request);
-        String headerValue = String.format("Authorization: %s %s", authenticationResponse.tokenType(),
-            authenticationResponse.accessToken());
+        String headerValue = String.format(
+          "Authorization: %s %s",
+          authenticationResponse.tokenType(),
+          authenticationResponse.accessToken()
+        );
         request.header("Authorization", headerValue);
       }
     };
@@ -95,6 +104,7 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
 
   @Override
   public void start(Map<String, String> map) {
+    replay.clear();
     this.config = new SalesforceSourceConfig(map);
     this.salesforceRestClient = SalesforceRestClientFactory.create(this.config);
     this.authenticationResponse = this.salesforceRestClient.authenticate();
@@ -108,14 +118,14 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
       }
     }
 
-    Preconditions.checkNotNull(apiVersion, "Could not find ApiVersion '%s'", this.config.version());
+    Preconditions.checkNotNull(
+      apiVersion,
+      "Could not find ApiVersion '%s'",
+      this.config.version()
+    );
     salesforceRestClient.apiVersion(apiVersion);
 
     SObjectsResponse sObjectsResponse = salesforceRestClient.objects();
-
-    if (log.isInfoEnabled()) {
-      log.info("Looking for metadata for {}", this.config.salesForceObject());
-    }
 
     for (SObjectMetadata metadata : sObjectsResponse.sobjects()) {
       if (this.config.salesForceObject().equals(metadata.name())) {
@@ -125,72 +135,81 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
       }
     }
 
-    Preconditions.checkNotNull(this.descriptor, "Could not find descriptor for '%s'", this.config.salesForceObject());
+    Preconditions.checkNotNull(
+      this.descriptor,
+      "Could not find descriptor for '%s'",
+      this.config.salesForceObject()
+    );
 
     this.keySchema = SObjectHelper.keySchema(this.descriptor);
-    this.valueSchema = SObjectHelper.valueSchema(this.descriptor, this.config.salesForcePushTopicFields());
+    this.valueSchema =
+      SObjectHelper.valueSchema(
+        this.descriptor,
+        this.config.salesForcePushTopicFields()
+      );
 
     this.streamingUrl = new GenericUrl(this.authenticationResponse.instance_url());
     this.streamingUrl.setRawPath(
-        String.format("/cometd/%s", this.apiVersion.version()));
+        String.format("/cometd/%s", this.apiVersion.version())
+      );
 
-    if (log.isInfoEnabled()) {
-      log.info("Configuring streaming url to {}", this.streamingUrl);
-    }
+    log.info("Configuring streaming url to {}", this.streamingUrl);
 
     this.streamingClient = createClient();
+
+    this.streamingClient.addExtension(new ReplayExtension(replay));
+
     this.streamingClient.getChannel(Channel.META_HANDSHAKE)
-        .addListener(new ClientSessionChannel.MessageListener() {
-          @Override
-          public void onMessage(ClientSessionChannel clientSessionChannel, Message message) {
-            if (log.isInfoEnabled()) {
-              log.info("onMessage - {}", message);
-            }
-            if (!message.isSuccessful()) {
-              if (log.isErrorEnabled()) {
-                log.error("Error during handshake: {} {}", message.get("error"), message.get("exception"));
-              }
-            }
+      .addListener(
+        (MessageListener) (clientSessionChannel, message) -> {
+          log.info("onMessage - {}", message);
+
+          if (!message.isSuccessful()) {
+            log.error(
+              "Error during handshake: {} {}",
+              message.get("error"),
+              message.get("exception")
+            );
           }
-        });
+        }
+      );
 
     this.streamingClient.getChannel(Channel.META_CONNECT)
-        .addListener(new ClientSessionChannel.MessageListener() {
-          @Override
-          public void onMessage(ClientSessionChannel clientSessionChannel, Message message) {
-            log.info("Connect message {}", message);
-          }
-        });
+      .addListener(
+        (MessageListener) (clientSessionChannel, message) ->
+          log.info("Connect message {}", message)
+      );
 
     this.streamingClient.getChannel(Channel.META_DISCONNECT)
-        .addListener(new ClientSessionChannel.MessageListener() {
-          @Override
-          public void onMessage(ClientSessionChannel clientSessionChannel, Message message) {
-            log.info("Disconnect message {}", message);
-          }
-        });
+      .addListener(
+        (MessageListener) (clientSessionChannel, message) ->
+          log.info("Disconnect message {}", message)
+      );
 
-    if (log.isInfoEnabled()) {
-      log.info("Starting handshake");
-    }
     String channel = String.format("/topic/%s", this.config.salesForcePushTopicName());
 
-    this.streamingClient.handshake(handshakeReply -> {
-      // You can only subscribe after a successful handshake.
-      if (handshakeReply.isSuccessful()) {
-        if (log.isInfoEnabled()) {
-          log.info("Successfull handshake");
-        }
+    this.streamingClient.handshake(
+        handshakeReply -> {
+          // You can only subscribe after a successful handshake.
+          if (!handshakeReply.isSuccessful()) {
+            log.error("Failed to make handshake with {} url", this.streamingUrl);
 
-        this.streamingClient.getChannel(channel).subscribe(this, subscribeReply -> {
-          if (subscribeReply.isSuccessful()) {
-            if (log.isInfoEnabled()) {
-              log.info("Subscribe successful to {}", channel);
-            }
+            return;
           }
-        });
-      }
-    });
+
+          replay.putIfAbsent(channel, REPLAY_FROM_EARLY);
+
+          this.streamingClient.getChannel(channel)
+            .subscribe(
+              this,
+              subscribeReply -> {
+                if (subscribeReply.isSuccessful()) {
+                  log.info("Subscribe successful to {}", channel);
+                }
+              }
+            );
+        }
+      );
   }
 
   @Override
@@ -231,8 +250,13 @@ public class SalesforceSourceTask extends SourceTask implements ClientSessionCha
       log.info("message={}", messageObject);
 
       JsonNode jsonNode = objectMapper.valueToTree(messageObject);
-      SourceRecord record = SObjectHelper.convert(jsonNode, this.config.salesForcePushTopicName(),
-          this.config.kafkaTopic(), keySchema, valueSchema);
+      SourceRecord record = SObjectHelper.convert(
+        jsonNode,
+        this.config.salesForcePushTopicName(),
+        this.config.kafkaTopic(),
+        keySchema,
+        valueSchema
+      );
       this.messageQueue.add(record);
     } catch (Exception ex) {
       log.error("Exception thrown while processing message.", ex);
