@@ -39,10 +39,6 @@ import io.confluent.kafka.connect.salesforce.rest.model.SObjectDescriptor;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectMetadata;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectsResponse;
 import io.confluent.kafka.connect.salesforce.rest.model.SalesforceException;
-import org.apache.kafka.connect.errors.ConnectException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -51,13 +47,19 @@ import java.util.Map;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
+import org.apache.kafka.connect.errors.ConnectException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 class SalesforceRestClientImpl implements SalesforceRestClient {
-  static final Logger log = LoggerFactory.getLogger(SalesforceRestClientImpl.class);
-  static final JsonFactory JSON_FACTORY = new JacksonFactory();
-  final SalesforceSourceConfig config;
-  final GenericUrl authenticateUrl = new GenericUrl("https://login.salesforce.com/services/oauth2/token");
-  final HttpRequestFactory requestFactory;
+
+  private static final Logger log = LoggerFactory.getLogger(SalesforceRestClientImpl.class);
+  private static final JsonFactory JSON_FACTORY = new JacksonFactory();
+  private final SalesforceSourceConfig config;
+  private final GenericUrl authenticateUrl = new GenericUrl(
+    "https://login.salesforce.com/services/oauth2/token"
+  );
+  private final HttpRequestFactory requestFactory;
   final HttpTransport httpTransport;
   AuthenticationResponse authentication;
   GenericUrl baseUrl;
@@ -68,49 +70,60 @@ class SalesforceRestClientImpl implements SalesforceRestClient {
     this(config, new NetHttpTransport());
   }
 
-  public SalesforceRestClientImpl(final SalesforceSourceConfig config, HttpTransport httpTransport) {
+  public SalesforceRestClientImpl(
+    final SalesforceSourceConfig config,
+    HttpTransport httpTransport
+  ) {
     this.config = config;
     this.httpTransport = httpTransport;
-    java.util.logging.Logger transportLogger = java.util.logging.Logger.getLogger(HttpTransport.class.getName());
+    java.util.logging.Logger transportLogger = java.util.logging.Logger.getLogger(
+      HttpTransport.class.getName()
+    );
     transportLogger.setLevel(Level.ALL);
-    transportLogger.addHandler(new Handler() {
-      @Override
-      public void publish(LogRecord record) {
-        if (Level.INFO.equals(record.getLevel())) {
-          log.info(record.getMessage());
-        } else if (Level.WARNING.equals(record.getLevel())) {
-          log.warn(record.getMessage());
-        } else if (Level.SEVERE.equals(record.getLevel())) {
-          log.error(record.getMessage());
-        }
-        log.debug(record.getMessage());
-      }
-
-      @Override
-      public void flush() {
-
-      }
-
-      @Override
-      public void close() throws SecurityException {
-
-      }
-    });
-    this.requestFactory = httpTransport.createRequestFactory(new HttpRequestInitializer() {
-      @Override
-      public void initialize(HttpRequest request) throws IOException {
-        if (config.curlLogging()) {
-          request.setCurlLoggingEnabled(true);
-          request.setLoggingEnabled(true);
+    transportLogger.addHandler(
+      new Handler() {
+        @Override
+        public void publish(LogRecord record) {
+          if (Level.INFO.equals(record.getLevel())) {
+            log.info(record.getMessage());
+          } else if (Level.WARNING.equals(record.getLevel())) {
+            log.warn(record.getMessage());
+          } else if (Level.SEVERE.equals(record.getLevel())) {
+            log.error(record.getMessage());
+          }
+          log.debug(record.getMessage());
         }
 
-        request.setParser(new JsonObjectParser(JSON_FACTORY));
-        if (null != authentication) {
-          String headerValue = String.format("%s %s", authentication.tokenType(), authentication.accessToken());
-          request.getHeaders().setAuthorization(headerValue);
-        }
+        @Override
+        public void flush() {}
+
+        @Override
+        public void close() throws SecurityException {}
       }
-    });
+    );
+
+    this.requestFactory =
+      httpTransport.createRequestFactory(
+        new HttpRequestInitializer() {
+          @Override
+          public void initialize(HttpRequest request) throws IOException {
+            if (config.curlLogging()) {
+              request.setCurlLoggingEnabled(true);
+              request.setLoggingEnabled(true);
+            }
+
+            request.setParser(new JsonObjectParser(JSON_FACTORY));
+            if (null != authentication) {
+              String headerValue = String.format(
+                "%s %s",
+                authentication.tokenType(),
+                authentication.accessToken()
+              );
+              request.getHeaders().setAuthorization(headerValue);
+            }
+          }
+        }
+      );
   }
 
   UrlEncodedContent buildAuthContent() {
@@ -119,23 +132,24 @@ class SalesforceRestClientImpl implements SalesforceRestClient {
     content.put("client_id", this.config.consumerKey());
     content.put("client_secret", this.config.consumerSecret());
     content.put("username", this.config.username());
-    String password = String.format("%s%s", this.config.password(), this.config.passwordToken());
+    String password = String.format(
+      "%s%s",
+      this.config.password(),
+      this.config.passwordToken()
+    );
     content.put("password", password);
     return new UrlEncodedContent(content);
   }
 
-
   <T> T executeAndParse(HttpRequest request, Class<T> cls) throws IOException {
-    if (log.isDebugEnabled()) {
-      log.debug("Calling {} on {}", request.getRequestMethod(), request.getUrl());
-    }
+    log.debug("Calling {} on {}", request.getRequestMethod(), request.getUrl());
+
     HttpResponse response = request.execute();
 
     if (response.isSuccessStatusCode()) {
       return response.parseAs(cls);
     } else {
-      SalesforceException exception = response.parseAs(SalesforceException.class);
-      throw exception;
+      throw response.parseAs(SalesforceException.class);
     }
   }
 
@@ -162,11 +176,13 @@ class SalesforceRestClientImpl implements SalesforceRestClient {
     HttpContent formContent = buildAuthContent();
 
     if (null == this.config.instance() || this.config.instance().isEmpty()) {
-      this.authentication = postAndParse(this.authenticateUrl, formContent, AuthenticationResponse.class);
+      this.authentication =
+        postAndParse(this.authenticateUrl, formContent, AuthenticationResponse.class);
     } else {
       GenericUrl authUrl = new GenericUrl(this.config.instance());
       authUrl.setRawPath("/services/oauth2/token");
-      this.authentication = postAndParse(authUrl, formContent, AuthenticationResponse.class);
+      this.authentication =
+        postAndParse(authUrl, formContent, AuthenticationResponse.class);
     }
 
     this.baseUrl = new GenericUrl(this.authentication.instance_url());
@@ -189,27 +205,24 @@ class SalesforceRestClientImpl implements SalesforceRestClient {
     Collections.sort(apiVersions);
     Collections.reverse(apiVersions);
     Preconditions.checkState(!apiVersions.isEmpty(), "No api versions were found.");
+    
     return apiVersions;
   }
-
 
   @Override
   public SObjectsResponse objects() {
     GenericUrl objectsUrl = this.versionBaseUrl.clone();
     objectsUrl.appendRawPath("/sobjects/");
 
-    SObjectsResponse response = getAndParse(objectsUrl, SObjectsResponse.class);
-
-
-    return response;
+    return getAndParse(objectsUrl, SObjectsResponse.class);
   }
-
 
   @Override
   public SObjectDescriptor describe(SObjectMetadata metadata) {
     String describeUrlText = metadata.urls().get("describe");
     GenericUrl describeUrl = this.baseUrl.clone();
     describeUrl.appendRawPath(describeUrlText);
+
     return getAndParse(describeUrl, SObjectDescriptor.class);
   }
 
@@ -217,9 +230,15 @@ class SalesforceRestClientImpl implements SalesforceRestClient {
   public List<PushTopic> pushTopics() {
     GenericUrl pushTopicsUrl = this.versionBaseUrl.clone();
     pushTopicsUrl.appendRawPath("/query/");
-    pushTopicsUrl.set("q", "SELECT Name, Query, ApiVersion, NotifyForOperationCreate, NotifyForOperationUpdate, NotifyForOperationUndelete, NotifyForOperationDelete, NotifyForFields from PushTopic");
+    pushTopicsUrl.set(
+      "q",
+      "SELECT Name, Query, ApiVersion, NotifyForOperationCreate, NotifyForOperationUpdate, NotifyForOperationUndelete, NotifyForOperationDelete, NotifyForFields from PushTopic"
+    );
 
-    PushTopicQueryResult queryResult = getAndParse(pushTopicsUrl, PushTopicQueryResult.class);
+    PushTopicQueryResult queryResult = getAndParse(
+      pushTopicsUrl,
+      PushTopicQueryResult.class
+    );
     return queryResult.records();
   }
 

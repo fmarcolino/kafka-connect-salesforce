@@ -24,12 +24,6 @@ import io.confluent.kafka.connect.salesforce.rest.model.PushTopic;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectDescriptor;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectMetadata;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectsResponse;
-import org.apache.kafka.common.config.ConfigDef;
-import org.apache.kafka.connect.connector.Task;
-import org.apache.kafka.connect.source.SourceConnector;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -37,8 +31,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.connect.connector.Task;
+import org.apache.kafka.connect.source.SourceConnector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SalesforceSourceConnector extends SourceConnector {
+
   private static Logger log = LoggerFactory.getLogger(SalesforceSourceConnector.class);
   List<Map<String, String>> configs = new ArrayList<>();
   private SalesforceSourceConfig config;
@@ -71,8 +71,16 @@ public class SalesforceSourceConnector extends SourceConnector {
       }
     }
 
-    Preconditions.checkNotNull(sObjectMetadata, "Could not find metadata for object '%s'", this.config.salesForceObject());
-    Preconditions.checkNotNull(sObjectDescriptor, "Could not find descriptor for object '%s'", this.config.salesForceObject());
+    Preconditions.checkNotNull(
+      sObjectMetadata,
+      "Could not find metadata for object '%s'",
+      this.config.salesForceObject()
+    );
+    Preconditions.checkNotNull(
+      sObjectDescriptor,
+      "Could not find descriptor for object '%s'",
+      this.config.salesForceObject()
+    );
 
     List<PushTopic> pushTopics = client.pushTopics();
     PushTopic pushTopic = null;
@@ -85,15 +93,16 @@ public class SalesforceSourceConnector extends SourceConnector {
     }
 
     if (null == pushTopic && this.config.salesForcePushTopicCreate()) {
-      if (log.isWarnEnabled()) {
-        log.warn("PushTopic {} was not found.", this.config.salesForcePushTopicName());
-      }
+      log.warn("PushTopic {} was not found.", this.config.salesForcePushTopicName());
 
       pushTopic = new PushTopic();
       pushTopic.name(this.config.salesForcePushTopicName());
 
       Set<String> fields = new LinkedHashSet<>();
-      if (null == this.config.salesForcePushTopicFields() || this.config.salesForcePushTopicFields().isEmpty()) {
+      if (
+        null == this.config.salesForcePushTopicFields() ||
+        this.config.salesForcePushTopicFields().isEmpty()
+      ) {
         for (SObjectDescriptor.Field f : sObjectDescriptor.fields()) {
           if (SObjectHelper.isTextArea(f)) {
             continue;
@@ -107,28 +116,35 @@ public class SalesforceSourceConnector extends SourceConnector {
       }
 
       String query = String.format(
-          "SELECT %s FROM %s",
-          Joiner.on(',').join(fields),
-          sObjectDescriptor.name()
+        "SELECT %s FROM %s",
+        Joiner.on(',').join(fields),
+        sObjectDescriptor.name()
       );
+
       pushTopic.query(query);
-      if (log.isInfoEnabled()) {
-        log.info("Setting query for {} to \n{}", pushTopic.name(), pushTopic.query());
-      }
+
       pushTopic.notifyForOperationCreate(this.config.salesForcePushTopicNotifyCreate());
       pushTopic.notifyForOperationUpdate(this.config.salesForcePushTopicNotifyUpdate());
       pushTopic.notifyForOperationDelete(this.config.salesForcePushTopicNotifyDelete());
-      pushTopic.notifyForOperationUndelete(this.config.salesForcePushTopicNotifyUndelete());
+      pushTopic.notifyForOperationUndelete(
+        this.config.salesForcePushTopicNotifyUndelete()
+      );
       pushTopic.apiVersion(new BigDecimal(apiVersion.version()));
 
-      if (log.isInfoEnabled()) {
-        log.info("Creating PushTopic {}", pushTopic.name());
-      }
+      log.info(
+        "Creating PushTopic {} with query {}",
+        pushTopic.name(),
+        pushTopic.query()
+      );
 
       client.pushTopic(pushTopic);
     }
 
-    Preconditions.checkNotNull(pushTopic, "PushTopic '%s' was not found.", this.config.salesForcePushTopicName());
+    Preconditions.checkNotNull(
+      pushTopic,
+      "PushTopic '%s' was not found.",
+      this.config.salesForcePushTopicName()
+    );
 
     Map<String, String> taskSettings = new HashMap<>();
     taskSettings.putAll(map);
@@ -147,10 +163,7 @@ public class SalesforceSourceConnector extends SourceConnector {
   }
 
   @Override
-  public void stop() {
-
-
-  }
+  public void stop() {}
 
   @Override
   public ConfigDef config() {

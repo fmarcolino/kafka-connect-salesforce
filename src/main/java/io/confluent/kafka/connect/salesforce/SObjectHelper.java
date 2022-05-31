@@ -21,6 +21,10 @@ import com.google.common.collect.ImmutableMap;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectDescriptor;
 import io.confluent.kafka.connect.utils.data.Parser;
 import io.confluent.kafka.connect.utils.data.type.DateTypeParser;
+import java.text.SimpleDateFormat;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.TimeZone;
 import org.apache.kafka.connect.data.Decimal;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
@@ -31,20 +35,20 @@ import org.apache.kafka.connect.source.SourceRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.text.SimpleDateFormat;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.TimeZone;
-
 class SObjectHelper {
-  static final Parser PARSER;
-  static final Map<String, ?> SOURCE_PARTITIONS = new HashMap<>();
-  private static final Logger log = LoggerFactory.getLogger(SObjectHelper.class);
+
+  private static final Parser PARSER;
+  private static final Map<String, ?> SOURCE_PARTITIONS = new HashMap<>();
 
   static {
     Parser p = new Parser();
-//    "2016-08-15T22:07:59.000Z"
-    p.registerTypeParser(Timestamp.SCHEMA, new DateTypeParser(TimeZone.getTimeZone("UTC"), new SimpleDateFormat("YYYY-MM-dd'T'HH:mm:ss.SSS'Z'")));
+    p.registerTypeParser(
+      Timestamp.SCHEMA,
+      new DateTypeParser(
+        TimeZone.getTimeZone("UTC"),
+        new SimpleDateFormat("YYYY-MM-dd'T'HH:mm:ss.SSS'Z'")
+      )
+    );
     PARSER = p;
   }
 
@@ -119,7 +123,11 @@ class SObjectHelper {
   }
 
   public static Schema valueSchema(SObjectDescriptor descriptor) {
-    String name = String.format("%s.%s", SObjectHelper.class.getPackage().getName(), descriptor.name());
+    String name = String.format(
+      "%s.%s",
+      SObjectHelper.class.getPackage().getName(),
+      descriptor.name()
+    );
     SchemaBuilder builder = SchemaBuilder.struct();
     builder.name(name);
 
@@ -135,12 +143,19 @@ class SObjectHelper {
   }
 
   public static Schema valueSchema(SObjectDescriptor descriptor, String customFields) {
-    String name = String.format("%s.%s", SObjectHelper.class.getPackage().getName(), descriptor.name());
+    String name = String.format(
+      "%s.%s",
+      SObjectHelper.class.getPackage().getName(),
+      descriptor.name()
+    );
     SchemaBuilder builder = SchemaBuilder.struct();
     builder.name(name);
 
     for (SObjectDescriptor.Field field : descriptor.fields()) {
-      if (!(customFields == null || customFields.isEmpty()) && !customFields.contains(field.name())) {
+      if (
+        !(customFields == null || customFields.isEmpty()) &&
+        !customFields.contains(field.name())
+      ) {
         continue;
       }
       if (isTextArea(field)) {
@@ -154,7 +169,11 @@ class SObjectHelper {
   }
 
   public static Schema keySchema(SObjectDescriptor descriptor) {
-    String name = String.format("%s.%sKey", SObjectHelper.class.getPackage().getName(), descriptor.name());
+    String name = String.format(
+      "%s.%sKey",
+      SObjectHelper.class.getPackage().getName(),
+      descriptor.name()
+    );
     SchemaBuilder builder = SchemaBuilder.struct();
     builder.name(name);
 
@@ -168,7 +187,9 @@ class SObjectHelper {
     }
 
     if (null == keyField) {
-      throw new IllegalStateException("Could not find an id field for " + descriptor.name());
+      throw new IllegalStateException(
+        "Could not find an id field for " + descriptor.name()
+      );
     }
 
     Schema keySchema = schema(keyField);
@@ -185,19 +206,31 @@ class SObjectHelper {
     }
   }
 
-  public static SourceRecord convert(JsonNode jsonNode, String pushTopicName, String topic, Schema keySchema, Schema valueSchema) {
+  public static SourceRecord convert(
+    JsonNode jsonNode,
+    String pushTopicName,
+    String topic,
+    Schema keySchema,
+    Schema valueSchema
+  ) {
     Preconditions.checkNotNull(jsonNode);
     Preconditions.checkState(jsonNode.isObject());
-    JsonNode dataNode = jsonNode.get("data");
-    JsonNode eventNode = dataNode.get("event");
-    JsonNode sobjectNode = dataNode.get("sobject");
+    JsonNode eventNode = jsonNode.get("event");
+    JsonNode sobjectNode = jsonNode.get("sobject");
     long replayId = eventNode.get("replayId").asLong();
     Struct keyStruct = new Struct(keySchema);
     Struct valueStruct = new Struct(valueSchema);
     convertStruct(sobjectNode, keySchema, keyStruct);
     convertStruct(sobjectNode, valueSchema, valueStruct);
     Map<String, Long> sourceOffset = ImmutableMap.of(pushTopicName, replayId);
-    return new SourceRecord(SOURCE_PARTITIONS, sourceOffset, topic, keySchema, keyStruct, valueSchema, valueStruct);
+    return new SourceRecord(
+      SOURCE_PARTITIONS,
+      sourceOffset,
+      topic,
+      keySchema,
+      keyStruct,
+      valueSchema,
+      valueStruct
+    );
   }
-
 }
