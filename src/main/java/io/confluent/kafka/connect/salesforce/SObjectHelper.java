@@ -25,6 +25,7 @@ import java.text.SimpleDateFormat;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TimeZone;
+import java.util.Collections;
 import org.apache.kafka.connect.data.Decimal;
 import org.apache.kafka.connect.data.Field;
 import org.apache.kafka.connect.data.Schema;
@@ -38,7 +39,6 @@ import org.slf4j.LoggerFactory;
 class SObjectHelper {
 
   private static final Parser PARSER;
-  private static final Map<String, ?> SOURCE_PARTITIONS = new HashMap<>();
 
   static {
     Parser p = new Parser();
@@ -222,9 +222,12 @@ class SObjectHelper {
     Struct valueStruct = new Struct(valueSchema);
     convertStruct(sobjectNode, keySchema, keyStruct);
     convertStruct(sobjectNode, valueSchema, valueStruct);
-    Map<String, Long> sourceOffset = ImmutableMap.of(pushTopicName, replayId);
+    Map sourcePartition = Collections.singletonMap("pushTopicName", pushTopicName);
+    Map<String, Long> sourceOffset = new HashMap<String, Long>();
+    sourceOffset.put("replayId", replayId);
+    sourceOffset.put("timestamp", System.currentTimeMillis());
     return new SourceRecord(
-      SOURCE_PARTITIONS,
+      sourcePartition,
       sourceOffset,
       topic,
       keySchema,

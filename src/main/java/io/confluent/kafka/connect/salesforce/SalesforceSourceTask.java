@@ -27,6 +27,7 @@ import io.confluent.kafka.connect.salesforce.rest.model.SObjectDescriptor;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectMetadata;
 import io.confluent.kafka.connect.salesforce.rest.model.SObjectsResponse;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -102,9 +103,44 @@ public class SalesforceSourceTask
     return new BayeuxClient(this.streamingUrl.toString(), transport);
   }
 
+  private class AuthFailureListener implements ClientSessionChannel.MessageListener {
+    private static final String ERROR_401 = "401";
+    private static final String ERROR_403 = "403";
+
+    @Override
+    public void onMessage(ClientSessionChannel channel, Message message) {
+      if (!message.isSuccessful()) {
+        if (isError(message, ERROR_401) || isError(message, ERROR_403)) {
+          log.info("Reconnecting... {}", message);
+          disconnect();
+          connect();
+        }
+      }
+    }
+
+    private boolean isError(Message message, String errorCode) {
+      String error = (String)message.get(Message.ERROR_FIELD);
+      String failureReason = getFailureReason(message);
+
+      return (error != null && error.startsWith(errorCode)) ||
+              (failureReason != null && failureReason.startsWith(errorCode));
+    }
+
+    private String getFailureReason(Message message) {
+      String failureReason = null;
+      Map<String, Object> ext = message.getExt();
+      if (ext != null) {
+        Map<String, Object> sfdc = (Map<String, Object>)ext.get("sfdc");
+        if (sfdc != null) {
+            failureReason = (String)sfdc.get("failureReason");
+        }
+      }
+      return failureReason;
+    }
+  }
+
   @Override
   public void start(Map<String, String> map) {
-    replay.clear();
     this.config = new SalesforceSourceConfig(map);
     this.salesforceRestClient = SalesforceRestClientFactory.create(this.config);
     this.authenticationResponse = this.salesforceRestClient.authenticate();
@@ -153,67 +189,77 @@ public class SalesforceSourceTask
         String.format("/cometd/%s", this.apiVersion.version())
       );
 
+    replay.clear();
+    this.connect();
+  }
+
+  public void disconnect() {
+    this.streamingClient.disconnect();
+    this.streamingClient.waitFor(1000, BayeuxClient.State.DISCONNECTED);
+  }
+
+  public String getChannel() {
+    return String.format("/topic/%s", this.config.salesForcePushTopicName());
+  }
+
+  public void setReplayId(String channel) {
+    if (!replay.isEmpty()) {
+      log.info("Replay already setted: {}", replay);
+      return;
+    }
+
+    Map<String, String> sourcePartition = Collections
+      .singletonMap("pushTopicName", this.config.salesForcePushTopicName());
+    Map<String, Object> offset = context.offsetStorageReader().offset(sourcePartition);
+
+    if (offset != null) {
+      Long lastRecordedReplayId = (Long) offset.get("replayId");
+      Long lastTimestamp = (Long) offset.get("timestamp");
+      Long nowTimestamp = System.currentTimeMillis();
+
+      if (lastRecordedReplayId != null && lastTimestamp != null && lastTimestamp > (nowTimestamp - 24 * 3600 * 1000)) {
+        log.info("Replay Id recovered: {} {}", lastRecordedReplayId, offset);
+        replay.putIfAbsent(channel, lastRecordedReplayId);
+        return;
+      }
+    }
+
+    log.warn("Replaying from early (24h ago)");
+    replay.putIfAbsent(channel, REPLAY_FROM_EARLY);
+  }
+
+  public void connect() {
     log.info("Configuring streaming url to {}", this.streamingUrl);
-
+    this.setReplayId(this.getChannel());
     this.streamingClient = createClient();
-
     this.streamingClient.addExtension(new ReplayExtension(replay));
-
-    this.streamingClient.getChannel(Channel.META_HANDSHAKE)
-      .addListener(
-        (MessageListener) (clientSessionChannel, message) -> {
-          log.info("onMessage - {}", message);
-
-          if (!message.isSuccessful()) {
-            log.error(
-              "Error during handshake: {} {}",
-              message.get("error"),
-              message.get("exception")
-            );
-          }
-        }
-      );
-
     this.streamingClient.getChannel(Channel.META_CONNECT)
-      .addListener(
-        (MessageListener) (clientSessionChannel, message) ->
-          log.info("Connect message {}", message)
-      );
-
-    this.streamingClient.getChannel(Channel.META_DISCONNECT)
-      .addListener(
-        (MessageListener) (clientSessionChannel, message) ->
-          log.info("Disconnect message {}", message)
-      );
-
-    String channel = String.format("/topic/%s", this.config.salesForcePushTopicName());
-
+      .addListener(new AuthFailureListener());
+    this.streamingClient.getChannel(Channel.META_HANDSHAKE)
+      .addListener(new AuthFailureListener());
     this.streamingClient.handshake(
-        handshakeReply -> {
-          // You can only subscribe after a successful handshake.
-          if (!handshakeReply.isSuccessful()) {
-            log.error("Failed to make handshake with {} url", this.streamingUrl);
+      handshakeReply -> {
+        if (!handshakeReply.isSuccessful()) {
+          log.error("Failed to make handshake with {} url", this.streamingUrl);
 
-            return;
-          }
-
-          replay.putIfAbsent(channel, REPLAY_FROM_EARLY);
-
-          this.streamingClient.getChannel(channel)
-            .subscribe(
-              this,
-              subscribeReply -> {
-                if (subscribeReply.isSuccessful()) {
-                  log.info("Subscribe successful to {}", channel);
-                }
-              }
-            );
+          return;
         }
-      );
+
+        this.streamingClient.getChannel(this.getChannel())
+          .subscribe(
+            this,
+            subscribeReply -> {
+              if (subscribeReply.isSuccessful()) {
+                log.info("Subscribe successful to {}", this.getChannel());
+              }
+            }
+          );
+      }
+    );
   }
 
   @Override
-  public List<SourceRecord> poll() throws InterruptedException {
+  public List<SourceRecord> poll() {
     List<SourceRecord> records = new ArrayList<>(256);
 
     while (records.isEmpty()) {
@@ -230,7 +276,7 @@ public class SalesforceSourceTask
       }
 
       if (records.isEmpty()) {
-        Thread.sleep(100);
+        return null;
       }
     }
 
@@ -239,7 +285,16 @@ public class SalesforceSourceTask
 
   @Override
   public void stop() {
-    this.streamingClient.disconnect();
+    disconnect();
+  }
+
+  @Override
+  public void commitRecord(SourceRecord record,
+                           org.apache.kafka.clients.producer.RecordMetadata metadata) throws InterruptedException {
+    Map<String, ?> offset = record.sourceOffset();
+    Long currentReplayId = (Long) offset.get("replayId");
+    log.info("commitRecord: replayId {} with offset {}", currentReplayId, metadata.offset());
+    replay.put(this.getChannel(), currentReplayId);
   }
 
   @Override
